@@ -83,6 +83,7 @@ type scanPlan struct {
 	outerKeys bool
 	// withRowid appends the rowid as an extra column (for UPDATE/DELETE).
 	withRowid bool
+	used      []*candidate // conditions the lookup covers (for EXPLAIN)
 }
 
 type bound struct {
@@ -289,6 +290,7 @@ type indexPlan struct {
 	filterText string
 	outerKeys  bool
 	withRowid  bool
+	used       []*candidate
 }
 
 func (p *indexPlan) columns() []string { return columnNames(p.table) }

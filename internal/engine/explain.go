@@ -41,7 +41,7 @@ func describe(p plan) (string, []plan) {
 		default:
 			label = "Scan " + name
 		}
-		if x.filterText != "" && x.eq == nil {
+		if x.filterText != "" {
 			label += " filter " + x.filterText
 		}
 		return label, nil

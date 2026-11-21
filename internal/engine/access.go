@@ -11,7 +11,8 @@ import (
 type candidate struct {
 	op    string // = < <= > >=
 	expr  sql.Expr
-	outer bool // expr mentions earlier tables of the join
+	outer bool   // expr mentions earlier tables of the join
+	from  string // the condition it came from, for EXPLAIN
 }
 
 // accessPlan chooses how to read unit i: a rowid lookup or range, an index
@@ -46,12 +47,13 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 
 	// Collect bounds per column.
 	bounds := map[int][]candidate{}
+	var source string // the condition being examined
 	add := func(col int, op string, other sql.Expr) {
 		r := refs(other)
 		if r&mine != 0 { // mentions this table (subqueries mention all)
 			return
 		}
-		bounds[col] = append(bounds[col], candidate{op: op, expr: other, outer: r != 0})
+		bounds[col] = append(bounds[col], candidate{op: op, expr: other, outer: r != 0, from: source})
 	}
 	colOf := func(e sql.Expr) int {
 		ref, ok := e.(*sql.ColumnRef)
@@ -68,6 +70,7 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 	}
 	flip := map[string]string{"=": "=", "<": ">", "<=": ">=", ">": "<", ">=": "<="}
 	for _, cj := range conds {
+		source = sql.FormatExpr(cj.expr)
 		switch x := cj.expr.(type) {
 		case *sql.Binary:
 			if _, ok := flip[x.Op]; !ok {
@@ -129,6 +132,7 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 				return nil, err
 			}
 			sp.eq, sp.eqText, sp.outerKeys = b.fn, b.text, eq.outer
+			sp.used = append(sp.used, eq)
 			score = 1000
 		case lo != nil || hi != nil:
 			score = 40
@@ -146,6 +150,7 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 				} else {
 					sp.hi = b
 				}
+				sp.used = append(sp.used, cd)
 				sp.outerKeys = sp.outerKeys || cd.outer
 				score += 10
 			}
@@ -167,6 +172,7 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 				ip.eq = append(ip.eq, b.fn)
 				ip.eqText = append(ip.eqText, t.Columns[col].Name+" = "+b.text)
 				ip.outerKeys = ip.outerKeys || eq.outer
+				ip.used = append(ip.used, eq)
 				score += 100
 				continue
 			}
@@ -185,6 +191,7 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 				} else {
 					ip.hi = b
 				}
+				ip.used = append(ip.used, cd)
 				ip.outerKeys = ip.outerKeys || cd.outer
 				score += 15
 			}
@@ -198,6 +205,34 @@ func (c *compiler) accessPlan(u *unit, i int, conds []*conjunct, earlier *scope,
 		}
 	}
 	if best != nil {
+		// Every condition still runs as a filter (so lookups never have to
+		// be exact), but EXPLAIN only lists the ones the lookup does not
+		// already cover. BETWEEN counts as covered only if both bounds are.
+		used := map[string]int{}
+		var keys []*candidate
+		switch b := best.(type) {
+		case *scanPlan:
+			keys = b.used
+		case *indexPlan:
+			keys = b.used
+		}
+		for _, k := range keys {
+			used[k.from]++
+		}
+		var rest []string
+		for _, cj := range conds {
+			text := sql.FormatExpr(cj.expr)
+			_, between := cj.expr.(*sql.Between)
+			if n := used[text]; n == 0 || (between && n < 2) {
+				rest = append(rest, text)
+			}
+		}
+		switch b := best.(type) {
+		case *scanPlan:
+			b.filterText = strings.Join(rest, " AND ")
+		case *indexPlan:
+			b.filterText = strings.Join(rest, " AND ")
+		}
 		return best, nil
 	}
 	return &scanPlan{table: t, alias: u.alias, filter: pred, filterText: text}, nil
