@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cairn console</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>cairn</h1>
+    <span id="stats" class="muted"></span>
+  </header>
+  <main>
+    <aside id="schema" aria-label="Tables">
+      <h2>Tables</h2>
+      <ul id="tables"></ul>
+    </aside>
+    <section id="work">
+      <label for="sql" class="visually-hidden">SQL</label>
+      <textarea id="sql" spellcheck="false" placeholder="SELECT 1;  (Ctrl+Enter or ⌘+Enter runs)"></textarea>
+      <div class="bar">
+        <button id="run" class="primary" type="button">Run</button>
+        <button id="explain" type="button">Explain</button>
+        <span id="status" class="muted" role="status"></span>
+        <span class="grow"></span>
+        <label class="muted"><input type="checkbox" id="keep"> keep history</label>
+      </div>
+      <div id="results" aria-live="polite"></div>
+      <details id="history-box">
+        <summary>History</summary>
+        <ol id="history"></ol>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

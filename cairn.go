@@ -312,3 +312,56 @@ func (db *DB) IsMemory() bool { return strings.EqualFold(db.path, Memory) }
 // Check verifies the database's structure and that indexes match their
 // tables, returning any problems found.
 func (db *DB) Check() ([]string, error) { return db.eng.Check() }
+
+// ColumnInfo describes a column.
+type ColumnInfo struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	NotNull    bool   `json:"notNull"`
+	PrimaryKey bool   `json:"primaryKey"`
+}
+
+// IndexInfo describes an index.
+type IndexInfo struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique"`
+	// Auto indexes enforce PRIMARY KEY and UNIQUE constraints.
+	Auto bool   `json:"auto"`
+	SQL  string `json:"sql"`
+}
+
+// TableInfo describes a table.
+type TableInfo struct {
+	Name    string       `json:"name"`
+	SQL     string       `json:"sql"`
+	Columns []ColumnInfo `json:"columns"`
+	Indexes []IndexInfo  `json:"indexes"`
+}
+
+// TableInfo lists the tables with their columns and indexes.
+func (db *DB) TableInfo() []TableInfo {
+	var out []TableInfo
+	for _, t := range db.eng.Catalog().Tables() {
+		ti := TableInfo{Name: t.Name, SQL: engine.TableSQL(t), Indexes: []IndexInfo{}}
+		pk := map[int]bool{}
+		for _, c := range t.PrimaryKey {
+			pk[c] = true
+		}
+		for i, c := range t.Columns {
+			ti.Columns = append(ti.Columns, ColumnInfo{Name: c.Name, Type: c.Type.String(), NotNull: c.NotNull || i == t.RowidCol, PrimaryKey: pk[i]})
+		}
+		for _, ix := range t.Indexes {
+			ii := IndexInfo{Name: ix.Name, Unique: ix.Unique, Auto: ix.Auto, SQL: engine.IndexSQL(t, ix)}
+			for _, c := range ix.Columns {
+				ii.Columns = append(ii.Columns, t.Columns[c].Name)
+			}
+			ti.Indexes = append(ti.Indexes, ii)
+		}
+		out = append(out, ti)
+	}
+	return out
+}
+
+// Result is set when the statement changed data and returned no rows.
+func (r *Rows) Result() *Result { return r.r.Result() }
