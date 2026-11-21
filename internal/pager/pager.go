@@ -282,11 +282,14 @@ func (r *ReadTx) Close() {
 // WriteTx changes pages. Changes stay private until Commit; Rollback (or a
 // failed Commit) discards them.
 type WriteTx struct {
-	p      *Pager
-	snap   snapshot
-	dirty  map[uint32][]byte
-	header []byte // page 0, always dirty once read through Modify
-	done   bool
+	p     *Pager
+	snap  snapshot
+	dirty map[uint32][]byte
+	done  bool
+	// stmt journals the pages a statement changes so that a failing
+	// statement can be undone without ending the transaction. A nil entry
+	// means the page was not dirty before the statement.
+	stmt map[uint32][]byte
 }
 
 // BeginWrite waits for any other write transaction to finish.
@@ -316,6 +319,11 @@ func (t *WriteTx) Modify(pgno uint32) ([]byte, error) {
 		return nil, ErrTxDone
 	}
 	if b, ok := t.dirty[pgno]; ok {
+		if t.stmt != nil {
+			if _, seen := t.stmt[pgno]; !seen {
+				t.stmt[pgno] = append([]byte(nil), b...)
+			}
+		}
 		return b, nil
 	}
 	if pgno >= t.PageCount() {
@@ -334,7 +342,31 @@ func (t *WriteTx) Modify(pgno uint32) ([]byte, error) {
 		b = make([]byte, PageSize)
 	}
 	t.dirty[pgno] = b
+	if t.stmt != nil {
+		if _, seen := t.stmt[pgno]; !seen {
+			t.stmt[pgno] = nil
+		}
+	}
 	return b, nil
+}
+
+// BeginStatement starts journaling, so RollbackStatement can undo
+// everything changed from here on.
+func (t *WriteTx) BeginStatement() { t.stmt = map[uint32][]byte{} }
+
+// EndStatement keeps the statement's changes.
+func (t *WriteTx) EndStatement() { t.stmt = nil }
+
+// RollbackStatement undoes the changes made since BeginStatement.
+func (t *WriteTx) RollbackStatement() {
+	for pgno, orig := range t.stmt {
+		if orig == nil {
+			delete(t.dirty, pgno)
+		} else {
+			t.dirty[pgno] = orig
+		}
+	}
+	t.stmt = nil
 }
 
 // PageCount is the number of pages in the database, including pages this

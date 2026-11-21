@@ -359,3 +359,32 @@ func TestConcurrentReadersAndWriter(t *testing.T) {
 		}
 	}
 }
+
+func TestStatementRollbackKeepsEarlierWork(t *testing.T) {
+	p := openMem(t, NewMemFS(), Options{})
+	tx := p.BeginWrite()
+	a, _, _ := tx.Allocate()
+	stamp(t, tx, a, 1)
+	tx.BeginStatement()
+	stamp(t, tx, a, 2)
+	b, _, _ := tx.Allocate()
+	stamp(t, tx, b, 3)
+	tx.RollbackStatement()
+	if got := readStamp(t, tx.Page, a); got != 1 {
+		t.Fatalf("page a = %d after statement rollback", got)
+	}
+	if tx.PageCount() != 2 {
+		t.Fatalf("the statement's allocation should be undone, %d pages", tx.PageCount())
+	}
+	tx.BeginStatement()
+	stamp(t, tx, a, 4)
+	tx.EndStatement()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	r := p.BeginRead()
+	if got := readStamp(t, r.Page, a); got != 4 {
+		t.Fatalf("committed %d", got)
+	}
+	r.Close()
+}
