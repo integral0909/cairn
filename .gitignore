@@ -1,0 +1,7 @@
+/cairn
+/bin/
+*.db
+*.db-wal
+*.test
+*.out
+.DS_Store
