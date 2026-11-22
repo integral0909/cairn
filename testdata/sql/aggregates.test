@@ -1,0 +1,80 @@
+statement ok
+CREATE TABLE sales (region TEXT, product TEXT, qty INTEGER, price REAL)
+
+statement ok
+INSERT INTO sales VALUES ('north', 'apple', 10, 0.5), ('north', 'pear', 5, 0.75), ('south', 'apple', 20, 0.5), ('south', 'apple', 5, 0.6), ('east', 'plum', NULL, 1.0)
+
+query
+SELECT region, sum(qty), count(*), round(avg(price), 3) FROM sales GROUP BY region ORDER BY region
+----
+east | NULL | 1 | 1.0
+north | 15 | 2 | 0.625
+south | 25 | 2 | 0.55
+
+query
+SELECT region, sum(qty * price) AS revenue FROM sales GROUP BY region HAVING sum(qty) > 10 ORDER BY revenue DESC
+----
+south | 13.0
+north | 8.75
+
+query
+SELECT product, count(DISTINCT region) FROM sales GROUP BY product ORDER BY 2 DESC, 1
+----
+apple | 2
+pear | 1
+plum | 1
+
+query
+SELECT group_concat(product, '+') FROM (SELECT DISTINCT product FROM sales ORDER BY product) AS p
+----
+apple+pear+plum
+
+query
+SELECT count(*), sum(qty), max(qty), total(qty) FROM sales WHERE region = 'nowhere'
+----
+0 | NULL | NULL | 0.0
+
+query
+SELECT region FROM sales GROUP BY region HAVING count(*) = 1
+----
+east
+
+query
+SELECT upper(region) AS r, sum(qty) FROM sales GROUP BY upper(region) ORDER BY r
+----
+EAST | NULL
+NORTH | 15
+SOUTH | 25
+
+query
+SELECT region, min(price), max(price) FROM sales GROUP BY 1 ORDER BY 1
+----
+east | 1.0 | 1.0
+north | 0.5 | 0.75
+south | 0.5 | 0.6
+
+statement error column product must appear in GROUP BY or be used in an aggregate
+SELECT region, product FROM sales GROUP BY region
+
+statement error aggregates are not allowed in WHERE
+SELECT region FROM sales WHERE sum(qty) > 1 GROUP BY region
+
+statement error aggregate calls cannot be nested
+SELECT sum(count(*)) FROM sales
+
+statement error cannot sum TEXT
+SELECT sum(region) FROM sales
+
+query
+SELECT bool_and(qty > 1), bool_or(qty > 15) FROM sales
+----
+true | true
+
+statement ok
+CREATE TABLE big (n INTEGER)
+
+statement ok
+INSERT INTO big VALUES (9223372036854775807), (1)
+
+statement error integer overflow
+SELECT sum(n) FROM big

@@ -1,0 +1,124 @@
+statement ok
+CREATE TABLE kv (k TEXT PRIMARY KEY, v INTEGER DEFAULT 0, note TEXT DEFAULT 'none')
+
+statement ok
+INSERT INTO kv (k) VALUES ('a')
+
+query
+SELECT k, v, note FROM kv
+----
+a | 0 | none
+
+statement ok
+INSERT OR REPLACE INTO kv VALUES ('a', 5, 'replaced')
+
+query
+SELECT k, v, note FROM kv
+----
+a | 5 | replaced
+
+statement ok
+INSERT INTO kv VALUES ('a', 9, 'ignored') ON CONFLICT DO NOTHING
+
+query
+SELECT v FROM kv WHERE k = 'a'
+----
+5
+
+query
+INSERT INTO kv (k, v) VALUES ('b', 1), ('c', 2) RETURNING k, v * 10
+----
+b | 10
+c | 20
+
+query
+UPDATE kv SET v = v + 100 WHERE k IN ('b', 'c') RETURNING k, v
+----
+b | 101
+c | 102
+
+query
+DELETE FROM kv WHERE v > 101 RETURNING *
+----
+c | 102 | none
+
+# A failing statement changes nothing, even halfway through.
+statement error PRIMARY KEY constraint failed
+INSERT INTO kv (k) VALUES ('new1'), ('new2'), ('a')
+
+query
+SELECT k FROM kv ORDER BY k
+----
+a
+b
+
+# Changing an INTEGER PRIMARY KEY moves the row.
+statement ok
+CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)
+
+statement ok
+INSERT INTO items VALUES (1, 'one'), (2, 'two'), (3, 'three')
+
+statement ok
+UPDATE items SET id = 10 WHERE id = 1
+
+query
+SELECT id, name FROM items ORDER BY id
+----
+2 | two
+3 | three
+10 | one
+
+statement error PRIMARY KEY constraint failed: items.id
+UPDATE items SET id = 2 WHERE id = 3
+
+statement error NOT NULL constraint failed: items.id
+UPDATE items SET id = NULL WHERE id = 3
+
+# INSERT ... SELECT from the same table sees only the old rows.
+statement ok
+INSERT INTO items (name) SELECT name || '!' FROM items
+
+query
+SELECT count(*), max(id) FROM items
+----
+6 | 13
+
+statement ok
+DELETE FROM items
+
+query
+SELECT count(*) FROM items
+----
+0
+
+statement ok
+INSERT INTO items (name) VALUES ('after delete')
+
+query
+SELECT id FROM items
+----
+1
+
+statement ok
+CREATE TABLE d (a INTEGER DEFAULT 7, b TEXT DEFAULT ('x' || 'y'))
+
+statement ok
+INSERT INTO d DEFAULT VALUES
+
+query
+SELECT a, b FROM d
+----
+7 | xy
+
+statement error default for c: must not refer to columns
+CREATE TABLE bad (b INTEGER, c INTEGER DEFAULT b)
+
+statement error INSERT has 2 target columns but 3 values
+INSERT INTO d (a, b) VALUES (1, 2, 3)
+
+statement error column a is listed twice
+INSERT INTO d (a, a) VALUES (1, 2)
+
+statement error table d has no column zz
+UPDATE d SET zz = 1

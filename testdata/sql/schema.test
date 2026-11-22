@@ -1,0 +1,86 @@
+statement ok
+CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)
+
+statement ok
+INSERT INTO notes (body) VALUES ('first'), ('second')
+
+statement ok
+ALTER TABLE notes ADD COLUMN pinned BOOLEAN DEFAULT false
+
+statement ok
+ALTER TABLE notes ADD COLUMN stars INTEGER
+
+query
+SELECT id, body, pinned, stars FROM notes ORDER BY id
+----
+1 | first | false | NULL
+2 | second | false | NULL
+
+statement ok
+INSERT INTO notes (body, pinned, stars) VALUES ('third', true, 5)
+
+query
+SELECT body FROM notes WHERE pinned
+----
+third
+
+statement error a NOT NULL column needs a default
+ALTER TABLE notes ADD COLUMN must INTEGER NOT NULL
+
+statement error table notes already has a column body
+ALTER TABLE notes ADD COLUMN body TEXT
+
+statement ok
+CREATE INDEX notes_stars ON notes (stars)
+
+statement ok
+ALTER TABLE notes RENAME TO memos
+
+statement error no such table: notes
+SELECT * FROM notes
+
+query
+SELECT body FROM memos WHERE stars = 5
+----
+third
+
+query
+EXPLAIN SELECT body FROM memos WHERE stars = 5
+----
+Project body
+└─ Index lookup memos using notes_stars (stars = 5)
+
+statement error the name notes_stars is already taken
+ALTER TABLE memos RENAME TO notes_stars
+
+statement error there is already an index called notes_stars
+CREATE TABLE notes_stars (x INTEGER)
+
+statement error table names starting with cairn_ are reserved
+CREATE TABLE cairn_x (y INTEGER)
+
+statement error has more than one PRIMARY KEY column
+CREATE TABLE t2 (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)
+
+statement error duplicate column a
+CREATE TABLE t3 (a INTEGER, a TEXT)
+
+statement error unknown column type
+CREATE TABLE t4 (a DATETIME)
+
+statement ok
+CREATE TABLE "Mixed Case" ("Some Column" TEXT, "select" INTEGER)
+
+statement ok
+INSERT INTO "Mixed Case" VALUES ('ok', 1)
+
+query
+SELECT "Some Column", "select" FROM "Mixed Case"
+----
+ok | 1
+
+statement ok
+DROP TABLE IF EXISTS nothing_here
+
+statement error no such index: nothing
+DROP INDEX nothing

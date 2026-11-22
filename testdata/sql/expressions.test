@@ -1,0 +1,100 @@
+query
+SELECT NULL AND false, NULL AND true, NULL OR true, NULL OR false, NOT NULL
+----
+false | NULL | true | NULL | NULL
+
+query
+SELECT 1 = NULL, NULL = NULL, NULL IS NULL, 1 IS NOT NULL, NULL IS NOT 1, 2 IS 2
+----
+NULL | NULL | true | true | true | true
+
+query
+SELECT 3 IN (1, 2, 3), 4 IN (1, NULL), 4 NOT IN (1, 2), 2 BETWEEN 1 AND 3, 5 NOT BETWEEN 1 AND 3
+----
+true | NULL | true | true | true
+
+query
+SELECT 'Hello' LIKE 'h%', 'hello' LIKE '_ello', 'abc' LIKE 'a%c%', 'x' NOT LIKE 'y', 'Hello' GLOB 'H*', 'hello' GLOB 'H*', 'b' GLOB '[a-c]'
+----
+true | true | true | true | true | false | true
+
+query
+SELECT CASE WHEN 1 > 2 THEN 'a' WHEN 2 > 1 THEN 'b' ELSE 'c' END, CASE 3 WHEN 1 THEN 'one' WHEN 3 THEN 'three' END, CASE WHEN false THEN 1 END
+----
+b | three | NULL
+
+query
+SELECT cast('42' AS INTEGER), cast(3.9 AS INTEGER), cast(7 AS TEXT), cast('2.5' AS REAL), cast('yes' AS BOOLEAN), cast(1 AS REAL)
+----
+42 | 3 | 7 | 2.5 | true | 1.0
+
+statement error cannot cast TEXT 'abc' to INTEGER
+SELECT cast('abc' AS INTEGER)
+
+query
+SELECT length('héllo'), upper('abc'), lower('ABC'), substr('database', 5), substr('database', 1, 4), trim('  x  '), replace('a-b-c', '-', '+'), instr('hello', 'l')
+----
+5 | ABC | abc | base | data | x | a+b+c | 3
+
+query
+SELECT abs(-3), abs(-2.5), round(2.567, 2), round(2.5), coalesce(NULL, NULL, 3), ifnull(NULL, 'd'), nullif(1, 1), nullif(1, 2)
+----
+3 | 2.5 | 2.57 | 3.0 | 3 | d | NULL | 1
+
+query
+SELECT typeof(1), typeof(1.0), typeof('a'), typeof(x'00'), typeof(NULL), typeof(true), hex('AB'), hex(x'0aff')
+----
+integer | real | text | blob | null | boolean | 4142 | 0AFF
+
+query
+SELECT min(3, 1, 2), max('a', 'c', 'b'), concat('a', NULL, 'b', 1), iif(1 < 2, 'yes', 'no'), sign(-4.5)
+----
+1 | c | ab1 | yes | -1
+
+query
+SELECT 9223372036854775807, -9223372036854775808, 9223372036854775808
+----
+9223372036854775807 | -9223372036854775808 | 9.223372036854776e+18
+
+statement error integer overflow
+SELECT 9223372036854775807 + 1
+
+statement error division by zero
+SELECT 1 / 0
+
+statement error division by zero
+SELECT 1.5 % 0
+
+statement error cannot apply + to TEXT 'a'
+SELECT 'a' + 1
+
+statement error cannot compare TEXT with INTEGER
+SELECT 'a' < 1
+
+statement error needs a boolean
+SELECT 1 WHERE 'yes'
+
+statement error no such function: frobnicate
+SELECT frobnicate(1)
+
+statement error wrong number of arguments to upper()
+SELECT upper('a', 'b')
+
+query
+SELECT 1 || 2, 'x' || NULL
+----
+12 | NULL
+
+query
+SELECT 10 / 4, 10 / 4.0, -7 / 2, -7 % 3, 2 * 3.5
+----
+2 | 2.5 | -3 | -1 | 7.0
+
+query
+SELECT 1 WHERE NULL
+----
+
+query
+SELECT x'cafe', length(x'cafe')
+----
+x'cafe' | 2

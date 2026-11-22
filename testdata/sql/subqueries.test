@@ -1,0 +1,107 @@
+statement ok
+CREATE TABLE emp (id INTEGER PRIMARY KEY, name TEXT, dept TEXT, salary INTEGER, boss INTEGER)
+
+statement ok
+INSERT INTO emp VALUES (1, 'Ana', 'eng', 120, NULL), (2, 'Bo', 'eng', 100, 1), (3, 'Cy', 'eng', 90, 1), (4, 'Di', 'ops', 80, NULL), (5, 'Ed', 'ops', 85, 4)
+
+# Correlated: earners above their department's average.
+query
+SELECT name FROM emp e WHERE salary > (SELECT avg(salary) FROM emp WHERE dept = e.dept) ORDER BY name
+----
+Ana
+Ed
+
+query
+SELECT name FROM emp WHERE id IN (SELECT boss FROM emp) ORDER BY name
+----
+Ana
+Di
+
+# NOT IN with a NULL in the list is never true.
+query
+SELECT name FROM emp WHERE id NOT IN (SELECT boss FROM emp)
+----
+
+query
+SELECT name FROM emp WHERE id NOT IN (SELECT boss FROM emp WHERE boss IS NOT NULL) ORDER BY id
+----
+Bo
+Cy
+Ed
+
+query
+SELECT name FROM emp e WHERE EXISTS (SELECT 1 FROM emp r WHERE r.boss = e.id) ORDER BY name
+----
+Ana
+Di
+
+query
+SELECT name, (SELECT name FROM emp b WHERE b.id = e.boss) AS boss FROM emp e ORDER BY e.id
+----
+Ana | NULL
+Bo | Ana
+Cy | Ana
+Di | NULL
+Ed | Di
+
+query
+SELECT d, n FROM (SELECT dept AS d, count(*) AS n FROM emp GROUP BY dept) AS t WHERE n > 2
+----
+eng | 3
+
+query
+SELECT (SELECT max(salary) FROM emp) - (SELECT min(salary) FROM emp)
+----
+40
+
+statement error more than one row
+SELECT (SELECT name FROM emp)
+
+statement error must return one column
+SELECT (SELECT id, name FROM emp LIMIT 1)
+
+query
+SELECT name FROM emp WHERE salary = (SELECT max(salary) FROM emp WHERE dept = 'ops')
+----
+Ed
+
+# Compound queries.
+query
+SELECT name FROM emp WHERE dept = 'eng' UNION SELECT name FROM emp WHERE salary > 84 ORDER BY 1
+----
+Ana
+Bo
+Cy
+Ed
+
+query
+SELECT dept FROM emp UNION ALL SELECT 'hr' ORDER BY 1
+----
+eng
+eng
+eng
+hr
+ops
+ops
+
+query
+SELECT boss FROM emp INTERSECT SELECT id FROM emp
+----
+1
+4
+
+query
+SELECT id FROM emp EXCEPT SELECT boss FROM emp ORDER BY id DESC
+----
+5
+3
+2
+
+query
+VALUES (1, 'one'), (2, 'two')
+----
+1 | one
+2 | two
+
+statement error same number of columns
+SELECT 1 UNION SELECT 1, 2

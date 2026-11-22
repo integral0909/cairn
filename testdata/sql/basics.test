@@ -1,0 +1,112 @@
+# Creating tables, inserting, selecting.
+
+statement ok
+CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, email TEXT UNIQUE)
+
+statement ok
+INSERT INTO people (name, age, email) VALUES ('Ada', 36, 'ada@example.com'), ('Grace', 45, 'grace@example.com'), ('Linus', NULL, NULL)
+
+query
+SELECT id, name, age, email FROM people ORDER BY id
+----
+1 | Ada | 36 | ada@example.com
+2 | Grace | 45 | grace@example.com
+3 | Linus | NULL | NULL
+
+query
+SELECT name FROM people WHERE age > 40
+----
+Grace
+
+query
+SELECT count(*), count(age), sum(age), avg(age), min(name), max(name) FROM people
+----
+3 | 2 | 81 | 40.5 | Ada | Linus
+
+query
+SELECT 1 + 2 * 3, 7 / 2, 7 % 3, 7.0 / 2, -5, 'a' || 'b', 2 > 1, NULL IS NULL
+----
+7 | 3 | 1 | 3.5 | -5 | ab | true | true
+
+query
+SELECT name FROM people WHERE email IS NULL
+----
+Linus
+
+statement error NOT NULL constraint failed: people.name
+INSERT INTO people (age) VALUES (1)
+
+statement error UNIQUE constraint failed: people.email
+INSERT INTO people (name, email) VALUES ('Imposter', 'ada@example.com')
+
+statement error PRIMARY KEY constraint failed: people.id
+INSERT INTO people (id, name) VALUES (1, 'Dup')
+
+statement error cannot store TEXT 'old' in INTEGER column people.age
+INSERT INTO people (name, age) VALUES ('Text age', 'old')
+
+statement ok
+INSERT INTO people (id, name, age) VALUES (10, 'Ten', 10.0)
+
+query
+SELECT id, age, typeof(age) FROM people WHERE id = 10
+----
+10 | 10 | integer
+
+statement ok
+INSERT INTO people (name) VALUES ('Next')
+
+query
+SELECT id FROM people WHERE name = 'Next'
+----
+11
+
+statement ok
+UPDATE people SET age = age + 1 WHERE age IS NOT NULL
+
+query
+SELECT name, age FROM people ORDER BY age DESC, name
+----
+Grace | 46
+Ada | 37
+Ten | 11
+Linus | NULL
+Next | NULL
+
+statement ok
+DELETE FROM people WHERE id > 3
+
+query
+SELECT count(*) FROM people
+----
+3
+
+query
+SELECT name FROM people ORDER BY name LIMIT 2 OFFSET 1
+----
+Grace
+Linus
+
+query
+SELECT DISTINCT age IS NULL FROM people ORDER BY 1
+----
+false
+true
+
+statement error no such table: nope
+SELECT * FROM nope
+
+statement error no such column: wat
+SELECT wat FROM people
+
+statement error table people already exists
+CREATE TABLE people (x INTEGER)
+
+statement ok
+CREATE TABLE IF NOT EXISTS people (x INTEGER)
+
+statement ok
+DROP TABLE people
+
+statement error no such table: people
+SELECT * FROM people

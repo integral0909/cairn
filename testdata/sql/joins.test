@@ -1,0 +1,112 @@
+# Inner, left and cross joins; join methods chosen by the planner.
+
+statement ok
+CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, city TEXT)
+
+statement ok
+CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, total REAL, status TEXT)
+
+statement ok
+INSERT INTO customers VALUES (1, 'Ada', 'London'), (2, 'Grace', 'New York'), (3, 'Linus', 'Helsinki'), (4, 'Nobody', NULL)
+
+statement ok
+INSERT INTO orders VALUES (10, 1, 25.0, 'paid'), (11, 1, 75.5, 'paid'), (12, 2, 10.0, 'open'), (13, 3, 99.9, 'paid'), (14, 99, 1.0, 'orphan')
+
+query rowsort
+SELECT c.name, o.total FROM customers c JOIN orders o ON o.customer_id = c.id
+----
+Ada | 25.0
+Ada | 75.5
+Grace | 10.0
+Linus | 99.9
+
+query
+SELECT c.name, count(o.id), coalesce(sum(o.total), 0) FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.name ORDER BY c.name
+----
+Ada | 2 | 100.5
+Grace | 1 | 10.0
+Linus | 1 | 99.9
+Nobody | 0 | 0
+
+query
+SELECT c.name FROM customers c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.id IS NULL
+----
+Nobody
+
+# A WHERE condition on the right side of a LEFT JOIN filters after the
+# join; the same condition in ON only limits the matches.
+query
+SELECT c.name, o.status FROM customers c LEFT JOIN orders o ON o.customer_id = c.id AND o.status = 'open' ORDER BY c.id
+----
+Ada | NULL
+Grace | open
+Linus | NULL
+Nobody | NULL
+
+query
+SELECT c.name, o.status FROM customers c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.status = 'open'
+----
+Grace | open
+
+query
+SELECT count(*) FROM customers, orders
+----
+20
+
+query
+SELECT a.name, b.name FROM customers a JOIN customers b ON a.city < b.city ORDER BY a.name, b.name
+----
+Ada | Grace
+Linus | Ada
+Linus | Grace
+
+query rowsort
+SELECT name, total FROM customers JOIN orders USING (id)
+----
+
+statement ok
+CREATE TABLE cities (city TEXT PRIMARY KEY, country TEXT)
+
+statement ok
+INSERT INTO cities VALUES ('London', 'UK'), ('Helsinki', 'Finland'), ('New York', 'USA')
+
+query rowsort
+SELECT name, country FROM customers JOIN cities USING (city)
+----
+Ada | UK
+Grace | USA
+Linus | Finland
+
+query rowsort
+SELECT c.name, ci.country, o.total FROM customers c JOIN cities ci ON ci.city = c.city JOIN orders o ON o.customer_id = c.id WHERE o.total > 20
+----
+Ada | UK | 25.0
+Ada | UK | 75.5
+Linus | Finland | 99.9
+
+# Joining on the rowid uses an index nested loop.
+query
+EXPLAIN SELECT c.name, o.total FROM orders o JOIN customers c ON c.id = o.customer_id
+----
+Project c.name, o.total
+└─ Index nested loop join
+   ├─ Scan orders AS o
+   └─ Rowid lookup customers AS c (id = o.customer_id)
+
+# Joining on an unindexed column uses a hash join.
+query
+EXPLAIN SELECT c.name, o.total FROM customers c JOIN orders o ON o.customer_id = c.id
+----
+Project c.name, o.total
+└─ Hash join on c.id = o.customer_id
+   ├─ Scan customers AS c
+   └─ Scan orders AS o
+
+statement error ambiguous
+SELECT id FROM customers, orders
+
+statement error table name customers is used twice
+SELECT * FROM customers JOIN customers ON 1 = 1
+
+statement error only INNER, LEFT and CROSS joins
+SELECT * FROM customers FULL JOIN orders ON 1 = 1

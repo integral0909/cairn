@@ -1,0 +1,162 @@
+statement ok
+CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, country TEXT, age INTEGER, score REAL)
+
+statement ok
+CREATE INDEX users_country_age ON users (country, age)
+
+statement ok
+INSERT INTO users (email, country, age, score) VALUES ('a@x', 'se', 30, 1.5), ('b@x', 'se', 41, 2.5), ('c@x', 'no', 25, 3.5), ('d@x', 'se', 35, NULL), ('e@x', NULL, 50, 4.0), ('f@x', 'no', NULL, 0.5)
+
+query
+EXPLAIN SELECT id FROM users WHERE email = 'c@x'
+----
+Project id
+└─ Index lookup users using auto_users_1 (email = 'c@x')
+
+query
+SELECT id FROM users WHERE email = 'c@x'
+----
+3
+
+query
+EXPLAIN SELECT email FROM users WHERE country = 'se' AND age >= 35
+----
+Project email
+└─ Index range users using users_country_age (country = 'se' AND age >= 35)
+
+query rowsort
+SELECT email FROM users WHERE country = 'se' AND age >= 35
+----
+b@x
+d@x
+
+query rowsort
+SELECT email FROM users WHERE country = 'se' AND age > 30 AND age < 41
+----
+d@x
+
+query rowsort
+SELECT email FROM users WHERE country = 'no'
+----
+c@x
+f@x
+
+# An upper bound alone must not return the NULL ages.
+query rowsort
+SELECT email FROM users WHERE country = 'no' AND age < 100
+----
+c@x
+
+query rowsort
+SELECT email FROM users WHERE country = 'se' AND age BETWEEN 31 AND 41
+----
+b@x
+d@x
+
+query
+EXPLAIN SELECT * FROM users WHERE id BETWEEN 2 AND 4
+----
+Project users.id, users.email, users.country, users.age, users.score
+└─ Rowid range users (id >= 2 AND id <= 4)
+
+query
+SELECT email FROM users WHERE id > 1.5 AND id <= 3.9 ORDER BY id
+----
+b@x
+c@x
+
+query
+SELECT email FROM users WHERE id = 3.0
+----
+c@x
+
+query
+SELECT email FROM users WHERE id = 3.5
+----
+
+query
+EXPLAIN SELECT email FROM users WHERE score > 2
+----
+Project email
+└─ Scan users filter score > 2
+
+# Comparing a text column with a number is an error, whichever plan runs.
+statement error cannot compare
+SELECT * FROM users WHERE email = 5
+
+statement error cannot compare
+SELECT * FROM users WHERE score = 'x'
+
+# Indexes stay in step with updates and deletes.
+statement ok
+UPDATE users SET country = 'dk' WHERE email = 'a@x'
+
+query
+SELECT email FROM users WHERE country = 'dk'
+----
+a@x
+
+query rowsort
+SELECT email FROM users WHERE country = 'se'
+----
+b@x
+d@x
+
+statement ok
+DELETE FROM users WHERE country = 'se'
+
+query
+SELECT count(*) FROM users WHERE country = 'se'
+----
+0
+
+statement error UNIQUE constraint failed: users.email
+UPDATE users SET email = 'c@x' WHERE id = 1
+
+statement ok
+CREATE UNIQUE INDEX users_score ON users (score)
+
+statement error cannot create unique index dup: duplicate values in users.country
+CREATE UNIQUE INDEX dup ON users (country)
+
+statement error index auto_users_1 enforces a PRIMARY KEY or UNIQUE constraint
+DROP INDEX auto_users_1
+
+statement ok
+DROP INDEX users_country_age
+
+query
+EXPLAIN SELECT email FROM users WHERE country = 'no'
+----
+Project email
+└─ Scan users filter country = 'no'
+
+# Many NULLs in a unique column are fine.
+statement ok
+CREATE TABLE tags (id INTEGER PRIMARY KEY, slug TEXT UNIQUE)
+
+statement ok
+INSERT INTO tags (slug) VALUES (NULL), (NULL), ('x')
+
+query
+SELECT count(*) FROM tags
+----
+3
+
+statement ok
+CREATE TABLE pairs (a TEXT, b INTEGER, PRIMARY KEY (a, b))
+
+statement ok
+INSERT INTO pairs VALUES ('x', 1), ('x', 2), ('y', 1)
+
+statement error PRIMARY KEY constraint failed: pairs.a, pairs.b
+INSERT INTO pairs VALUES ('x', 1)
+
+statement error NOT NULL constraint failed: pairs.b
+INSERT INTO pairs (a) VALUES ('z')
+
+query
+EXPLAIN SELECT * FROM pairs WHERE a = 'x' AND b = 2
+----
+Project pairs.a, pairs.b
+└─ Index lookup pairs using auto_pairs_1 (a = 'x' AND b = 2)
